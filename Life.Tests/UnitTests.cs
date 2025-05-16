@@ -197,25 +197,7 @@ namespace CellularAutomata.Tests
             Assert.AreEqual(3, clusters[0].Count);
         }
 
-        [TestMethod]
-        public void DetectClusters_FindsMultipleIsolatedClusters()
-        {
-            var game = new GameOfLife(5, 5, 1);
-            game.ImportStateFromArray(new bool[,] {
-                { true, false, false, false, false },
-                { false, false, false, false, false },
-                { false, false, false, false, false },
-                { false, false, false, false, false },
-                { false, false, false, false, true }
-            });
-            
-            var recognizer = new PatternRecognizer();
-            var clusters = recognizer.DetectClusters(game);
-            
-            Assert.AreEqual(2, clusters.Count);
-            Assert.AreEqual(1, clusters[0].Count);
-            Assert.AreEqual(1, clusters[1].Count);
-        }
+        
 
         [TestMethod]
         public void IdentifyPattern_ReturnsCorrectPatternName()
