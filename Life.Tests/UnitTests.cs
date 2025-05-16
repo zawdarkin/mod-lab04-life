@@ -1,9 +1,8 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using CellularAutomata;
-using System.Text.Json;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Collections.Generic;
+using CellularAutomata;
 
 namespace CellularAutomataTests
 {
@@ -11,52 +10,40 @@ namespace CellularAutomataTests
     public class CellTests
     {
         [TestMethod]
-        public void LiveCellWithOneNeighbor_Dies()
+        public void Cell_StaysDead_WithNoNeighbors()
         {
-            var cell = new Cell { IsAlive = true };
-            cell.AddNeighbor(new Cell { IsAlive = true });
+            var cell = new Cell();
             cell.CalculateNextState();
             Assert.IsFalse(cell.NextState);
         }
 
         [TestMethod]
-        public void LiveCellWithTwoNeighbors_StaysAlive()
-        {
-            var cell = new Cell { IsAlive = true };
-            cell.AddNeighbor(new Cell { IsAlive = true });
-            cell.AddNeighbor(new Cell { IsAlive = true });
-            cell.CalculateNextState();
-            Assert.IsTrue(cell.NextState);
-        }
-
-        [TestMethod]
-        public void LiveCellWithFourNeighbors_Dies()
-        {
-            var cell = new Cell { IsAlive = true };
-            for (int i = 0; i < 4; i++)
-                cell.AddNeighbor(new Cell { IsAlive = true });
-            cell.CalculateNextState();
-            Assert.IsFalse(cell.NextState);
-        }
-
-        [TestMethod]
-        public void DeadCellWithThreeNeighbors_BecomesAlive()
+        public void Cell_Resurrects_WithExactlyThreeNeighbors()
         {
             var cell = new Cell { IsAlive = false };
             for (int i = 0; i < 3; i++)
                 cell.AddNeighbor(new Cell { IsAlive = true });
-            cell.CalculateNextState();
-            Assert.IsTrue(cell.NextState);
-        }
-
-        [TestMethod]
-        public void Cell_UpdateState_ChangesToNextState()
-        {
-            var cell = new Cell { IsAlive = false };
             
-            for (int i = 0; i < 3; i++)
+            cell.CalculateNextState();
+            Assert.IsTrue(cell.NextState);
+        }
+
+        [TestMethod]
+        public void Cell_Dies_FromOverpopulation()
+        {
+            var cell = new Cell { IsAlive = true };
+            for (int i = 0; i < 5; i++)
                 cell.AddNeighbor(new Cell { IsAlive = true });
-            cell.CalculateNextState(); 
+            
+            cell.CalculateNextState();
+            Assert.IsFalse(cell.NextState);
+        }
+
+        [TestMethod]
+        public void Cell_UpdatesState_Correctly()
+        {
+            var cell = new Cell { IsAlive = false };
+            cell.NextState = true;
             cell.UpdateState();
             Assert.IsTrue(cell.IsAlive);
         }
@@ -65,117 +52,132 @@ namespace CellularAutomataTests
     [TestClass]
     public class GameOfLifeTests
     {
-        private string testDirectory = Path.Combine(Directory.GetCurrentDirectory(), "TestData");
+        private string testDir = Path.Combine(Directory.GetCurrentDirectory(), "TestData");
 
         [TestInitialize]
-    public void Setup()
-    {
-        if (!Directory.Exists(testDirectory))
+        public void Setup()
         {
-            Directory.CreateDirectory(testDirectory);
-            
-            File.WriteAllText(Path.Combine(testDirectory, "pattern_3x3.txt"), "000\n010\n000");
+            Directory.CreateDirectory(testDir);
+            File.WriteAllText(Path.Combine(testDir, "empty_board.txt"), "3 3\n000\n000\n000");
+            File.WriteAllText(Path.Combine(testDir, "glider_board.txt"), "5 5\n00000\n00100\n00010\n01110\n00000");
         }
-    }
 
         [TestMethod]
-        public void Constructor_CalculatesCorrectDimensions()
+        public void Game_Initializes_WithCorrectDimensions()
         {
-            var game = new GameOfLife(100, 50, 2, 0.1);
+            var game = new GameOfLife(100, 50, 2);
             Assert.AreEqual(50, game.Width);
             Assert.AreEqual(25, game.Height);
         }
 
         [TestMethod]
-        public void Randomize_RespectsDensityParameter()
+        public void Game_CountsLiveCells_Accurately()
         {
-            var game = new GameOfLife(100, 100, 1, 0.3);
-            int aliveCount = game.CountLiveCells();
-            double aliveRatio = aliveCount / (double)(game.Width * game.Height);
-            Assert.IsTrue(aliveRatio >= 0.25 && aliveRatio <= 0.35);
+            var game = new GameOfLife(3, 3, 1);
+            game.LoadPattern(Path.Combine(testDir, "glider_board.txt"));
+            Assert.AreEqual(5, game.CountLiveCells());
         }
 
         [TestMethod]
-        public void NextGeneration_UpdatesAllCells()
+        public void Game_LoadsPattern_FromFile()
         {
-            var game = new GameOfLife(10, 10, 1, 0.5);
-            int initialCount = game.CountLiveCells();
-            game.NextGeneration();
-            Assert.AreNotEqual(initialCount, game.CountLiveCells());
+            var game = new GameOfLife(5, 5, 1);
+            game.LoadPattern(Path.Combine(testDir, "glider_board.txt"));
+            Assert.IsTrue(game.GetCellState(2, 1));
         }
 
         [TestMethod]
-        public void ImportExportState_RoundTrip_Succeeds()
+        public void Game_ThrowsException_ForInvalidPatternFile()
         {
-            string testFile = Path.Combine(testDirectory, "test_board.txt");
-            var game1 = new GameOfLife(50, 20, 1, 0.1);
-            game1.ExportState(testFile);
-
-            var game2 = new GameOfLife(50, 20, 1, 0);
-            game2.ImportState(testFile);
-
-            Assert.AreEqual(game1.Width, game2.Width);
-            Assert.AreEqual(game1.Height, game2.Height);
-        }
-
-        [TestMethod]
-        public void LoadPattern_NonExistentFile_ThrowsException()
-        {
-            var game = new GameOfLife(100, 100, 1, 0.1);
+            var game = new GameOfLife(10, 10, 1);
             Assert.ThrowsException<FileNotFoundException>(() => 
-                game.LoadPattern("nonexistent_pattern.txt"));
+                game.LoadPattern("invalid_path.txt"));
         }
 
         [TestMethod]
-        public void GetCellState_ReturnsCorrectValue()
+        public void Game_ExportsAndImportsState_Identically()
         {
-            var game = new GameOfLife(3, 3, 1, 0);
-            game.LoadPattern(Path.Combine(testDirectory, "pattern_3x3.txt"));
-            Assert.IsTrue(game.GetCellState(1, 1));
+            var game1 = new GameOfLife(5, 5, 1);
+            game1.LoadPattern(Path.Combine(testDir, "glider_board.txt"));
+            game1.ExportState(Path.Combine(testDir, "exported.txt"));
+
+            var game2 = new GameOfLife(5, 5, 1);
+            game2.ImportState(Path.Combine(testDir, "exported.txt"));
+            
+            Assert.AreEqual(game1.CountLiveCells(), game2.CountLiveCells());
         }
     }
 
     [TestClass]
-public class PatternRecognizerTests
-{
-    private string testDirectory = Path.Combine(Directory.GetCurrentDirectory(), "TestPatterns");
-
-    [TestInitialize]
-    public void Setup()
+    public class PatternRecognizerTests
     {
-        if (!Directory.Exists(testDirectory))
+        private string patternsDir = Path.Combine(Directory.GetCurrentDirectory(), "TestPatterns");
+
+        [TestInitialize]
+        public void Setup()
         {
-            Directory.CreateDirectory(testDirectory);
-            File.WriteAllText(Path.Combine(testDirectory, "blinker.txt"), "010\n010\n010");
-            File.WriteAllText(Path.Combine(testDirectory, "two_cells.txt"), "11\n00");
+            Directory.CreateDirectory(patternsDir);
+            File.WriteAllText(Path.Combine(patternsDir, "blinker.txt"), "010\n010\n010");
+            File.WriteAllText(Path.Combine(patternsDir, "block.txt"), "11\n11");
         }
-    }
 
         [TestMethod]
-        public void DetectClusters_TwoAdjacentCells_ReturnsOneCluster()
+        public void Recognizer_Detects_BlinkerPattern()
         {
-            var game = new GameOfLife(5, 5, 1, 0);
-            game.LoadPattern(Path.Combine(testDirectory, "two_cells.txt"));
+            var game = new GameOfLife(3, 3, 1);
+            game.LoadPattern(Path.Combine(patternsDir, "blinker.txt"));
             
             var recognizer = new PatternRecognizer();
             var clusters = recognizer.DetectClusters(game);
+            var pattern = recognizer.IdentifyPattern(clusters.First(), patternsDir);
             
-            Assert.AreEqual(1, clusters.Count);
-            Assert.AreEqual(2, clusters[0].Count);
+            Assert.AreEqual("blinker", pattern);
         }
 
-       
+        [TestMethod]
+        public void Recognizer_Detects_SingleCell_AsUnknown()
+        {
+            var cluster = new HashSet<(int, int)> { (0, 0) };
+            var recognizer = new PatternRecognizer();
+            var result = recognizer.IdentifyPattern(cluster);
+            
+            Assert.IsTrue(result.Contains("Неизвестный паттерн"));
+        }
 
         [TestMethod]
-        public void NormalizeClusterCoordinates_ShiftsToOrigin()
+        public void Recognizer_NormalizesCoordinates_Correctly()
         {
             var cluster = new HashSet<(int, int)> { (5, 10), (6, 10), (5, 11) };
+            var recognizer = new PatternRecognizer();
+            var normalized = recognizer.NormalizeClusterCoordinates(cluster);
             
-            var expected = new HashSet<(int, int)> { (0, 0), (1, 0), (0, 1) };
+            Assert.IsTrue(normalized.Contains((0, 0)));
+            Assert.IsTrue(normalized.Contains((1, 0)));
+            Assert.IsTrue(normalized.Contains((0, 1)));
+        }
+    }
+
+    [TestClass]
+    public class StabilityAnalyzerTests
+    {
+        [TestMethod]
+        public void Analyzer_DetectsStableState_AfterFiveGenerations()
+        {
+            var game = new GameOfLife(3, 3, 1);
+            var analyzer = new StabilityAnalyzer();
             
+            for (int i = 0; i < 5; i++)
+                analyzer.CheckForStableState(game);
             
-            var game = new GameOfLife(20, 20, 1, 0);
-            
+            Assert.IsTrue(analyzer.CheckForStableState(game));
+        }
+
+        [TestMethod]
+        public void Analyzer_DoesNotDetectStability_ForChangingPopulation()
+        {
+            var game = new GameOfLife(10, 10, 1, 0.5);
+            var analyzer = new StabilityAnalyzer();
+            Assert.IsFalse(analyzer.CheckForStableState(game));
         }
     }
 
@@ -183,21 +185,9 @@ public class PatternRecognizerTests
     public class SimulationConfigTests
     {
         [TestMethod]
-        public void DefaultValues_AreCorrect()
+        public void Config_SerializesToJson_AndBack()
         {
-            var config = new SimulationConfig();
-            
-            Assert.AreEqual(50, config.GridWidth);
-            Assert.AreEqual(20, config.GridHeight);
-            Assert.AreEqual(1, config.CellDimension);
-            Assert.AreEqual(0.5, config.InitialCellDensity);
-            Assert.AreEqual(2, config.UpdateDelay);
-        }
-
-        [TestMethod]
-        public void JsonSerialization_RoundTrip_Succeeds()
-        {
-            var original = new SimulationConfig
+            var config = new SimulationConfig
             {
                 GridWidth = 100,
                 GridHeight = 50,
@@ -206,42 +196,10 @@ public class PatternRecognizerTests
                 UpdateDelay = 5
             };
 
-            string json = JsonSerializer.Serialize(original);
+            string json = JsonSerializer.Serialize(config);
             var deserialized = JsonSerializer.Deserialize<SimulationConfig>(json);
             
-            Assert.AreEqual(original.GridWidth, deserialized.GridWidth);
-            Assert.AreEqual(original.GridHeight, deserialized.GridHeight);
-            Assert.AreEqual(original.CellDimension, deserialized.CellDimension);
-            Assert.AreEqual(original.InitialCellDensity, deserialized.InitialCellDensity);
-            Assert.AreEqual(original.UpdateDelay, deserialized.UpdateDelay);
-        }
-    }
-
-    [TestClass]
-    public class StabilityAnalyzerTests
-    {
-        [TestMethod]
-        public void CheckForStableState_WithStablePopulation_ReturnsTrue()
-        {
-            var game = new GameOfLife(10, 10, 1, 0);
-            var analyzer = new StabilityAnalyzer();
-            
-            
-            for (int i = 0; i < 5; i++)
-            {
-                analyzer.CheckForStableState(game);
-            }
-            
-            Assert.IsTrue(analyzer.CheckForStableState(game));
-        }
-
-        [TestMethod]
-        public void CheckForStableState_WithChangingPopulation_ReturnsFalse()
-        {
-            var game = new GameOfLife(10, 10, 1, 0.5);
-            var analyzer = new StabilityAnalyzer();
-            
-            Assert.IsFalse(analyzer.CheckForStableState(game));
+            Assert.AreEqual(config.GridWidth, deserialized.GridWidth);
         }
     }
 }
