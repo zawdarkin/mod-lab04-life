@@ -1,131 +1,322 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Text.Json;
 using System.Threading;
+using ScottPlot;
+using ScottPlot.Colormaps;
 
-namespace cli_life
+namespace CellularAutomata
 {
-    public class Cell
+    public class Program
     {
-        public bool IsAlive;
-        public readonly List<Cell> neighbors = new List<Cell>();
-        private bool IsAliveNext;
-        public void DetermineNextLiveState()
+        private static GameOfLife currentSimulation;
+        private static SimulationConfig config;
+        private static StabilityAnalyzer stabilityAnalyzer = new StabilityAnalyzer();
+        private static PatternRecognizer patternRecognizer = new PatternRecognizer();
+        private static int currentGeneration;
+        private static int generationsToStableState;
+
+        public static void Main(string[] args)
         {
-            int liveNeighbors = neighbors.Where(x => x.IsAlive).Count();
-            if (IsAlive)
-                IsAliveNext = liveNeighbors == 2 || liveNeighbors == 3;
-            else
-                IsAliveNext = liveNeighbors == 3;
-        }
-        public void Advance()
-        {
-            IsAlive = IsAliveNext;
-        }
-    }
-    public class Board
-    {
-        public readonly Cell[,] Cells;
-        public readonly int CellSize;
+            InitializeApplication();
 
-        public int Columns { get { return Cells.GetLength(0); } }
-        public int Rows { get { return Cells.GetLength(1); } }
-        public int Width { get { return Columns * CellSize; } }
-        public int Height { get { return Rows * CellSize; } }
+            Console.WriteLine("Выберите режим моделирования:");
+            Console.WriteLine("1 - Загрузка начального состояния из файла");
+            Console.WriteLine("2 - Загрузка схемы 'Пушка Госпера'");
+            Console.WriteLine("3 - Анализ разных плотностей заполнения");
+            Console.Write("Ваш выбор: ");
 
-        public Board(int width, int height, int cellSize, double liveDensity = .1)
-        {
-            CellSize = cellSize;
-
-            Cells = new Cell[width / cellSize, height / cellSize];
-            for (int x = 0; x < Columns; x++)
-                for (int y = 0; y < Rows; y++)
-                    Cells[x, y] = new Cell();
-
-            ConnectNeighbors();
-            Randomize(liveDensity);
+            var choice = Console.ReadLine();
+            ProcessUserChoice(choice);
         }
 
-        readonly Random rand = new Random();
-        public void Randomize(double liveDensity)
+        private static void InitializeApplication()
         {
-            foreach (var cell in Cells)
-                cell.IsAlive = rand.NextDouble() < liveDensity;
+            string appDirectory = Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName;
+            string configPath = Path.Combine(appDirectory, "config.json");
+            LoadConfiguration(configPath);
         }
 
-        public void Advance()
+        private static void ProcessUserChoice(string choice)
         {
-            foreach (var cell in Cells)
-                cell.DetermineNextLiveState();
-            foreach (var cell in Cells)
-                cell.Advance();
-        }
-        private void ConnectNeighbors()
-        {
-            for (int x = 0; x < Columns; x++)
+            switch (choice)
             {
-                for (int y = 0; y < Rows; y++)
+                case "1":
+                    StartSimulationFromFile();
+                    break;
+                case "2":
+                    StartSimulationWithGosperGun();
+                    break;
+                case "3":
+                    AnalyzeMultipleDensities();
+                    break;
+                default:
+                    Console.WriteLine("Неверный выбор, запуск с файла по умолчанию");
+                    StartSimulationFromFile();
+                    break;
+            }
+        }
+
+        private static void StartSimulationFromFile()
+        {
+            string boardFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "board.txt");
+            string stabilityFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "stab/stable0_1.txt");
+
+            InitializeSimulation(boardFile);
+            RunMainSimulationLoop(stabilityFile);
+        }
+
+        private static void StartSimulationWithGosperGun()
+        {
+            string patternsDir = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "patterns/");
+            string dataFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "populationData.txt");
+            string plotFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "populationPlot.png");
+
+            InitializeSimulation();
+            currentSimulation.LoadPattern(Path.Combine(patternsDir, "gosperGun.txt"));
+
+            RunMainSimulationLoop();
+            AnalyzePopulationDynamics(dataFile, plotFile);
+        }
+
+        private static void AnalyzeMultipleDensities()
+        {
+            string dataFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "multiDensityData.txt");
+            string plotFile = Path.Combine(Directory.GetParent(Environment.CurrentDirectory).Parent.Parent.FullName, "multiDensityPlot.png");
+
+            double[] densities = { 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 };
+            int maxGenerations = 600;
+
+            File.WriteAllText(dataFile, "Поколение Плотность Количество_клеток\n");
+
+            foreach (var density in densities)
+            {
+                var simulation = new GameOfLife(50, 20, 1, density);
+                for (int gen = 0; gen < maxGenerations; gen++)
                 {
-                    int xL = (x > 0) ? x - 1 : Columns - 1;
-                    int xR = (x < Columns - 1) ? x + 1 : 0;
+                    File.AppendAllText(dataFile, $"{gen} {density} {simulation.CountLiveCells()}\n");
+                    simulation.NextGeneration();
+                }
+            }
 
-                    int yT = (y > 0) ? y - 1 : Rows - 1;
-                    int yB = (y < Rows - 1) ? y + 1 : 0;
+            GenerateMultiDensityPlot(dataFile, plotFile);
+            Console.WriteLine($"График для разных плотностей сохранен в: {plotFile}");
+        }
 
-                    Cells[x, y].neighbors.Add(Cells[xL, yT]);
-                    Cells[x, y].neighbors.Add(Cells[x, yT]);
-                    Cells[x, y].neighbors.Add(Cells[xR, yT]);
-                    Cells[x, y].neighbors.Add(Cells[xL, y]);
-                    Cells[x, y].neighbors.Add(Cells[xR, y]);
-                    Cells[x, y].neighbors.Add(Cells[xL, yB]);
-                    Cells[x, y].neighbors.Add(Cells[x, yB]);
-                    Cells[x, y].neighbors.Add(Cells[xR, yB]);
+        private static void GenerateMultiDensityPlot(string dataFile, string plotFile)
+        {
+            var plotData = File.ReadAllLines(dataFile)
+                .Skip(1)
+                .Select(line => line.Split(' '))
+                .Where(parts => parts.Length == 3)
+                .Select(parts => new {
+                    Generation = int.Parse(parts[0]),
+                    Density = double.Parse(parts[1]),
+                    CellCount = int.Parse(parts[2])
+                }).ToList();
+
+            var plot = new Plot();
+            var colors = new Color[] { Colors.Red, Colors.Orange, Colors.Gold, Colors.Green, Colors.Blue,
+                             Colors.Indigo, Colors.Violet, Colors.Gray, Colors.Black };
+
+            var densityGroups = plotData.GroupBy(x => x.Density).OrderBy(g => g.Key).ToList();
+
+            for (int i = 0; i < densityGroups.Count; i++)
+            {
+                var group = densityGroups[i];
+                var scatter = plot.Add.Scatter(
+                    group.Select(x => (double)x.Generation).ToArray(),
+                    group.Select(x => (double)x.CellCount).ToArray());
+
+                scatter.Color = colors[i];
+                scatter.LegendText = $"Плотность {group.Key:F1}";
+                scatter.LineWidth = 2;
+                scatter.MarkerSize = 0;
+            }
+
+            plot.Title("Динамика популяции клеток для разных плотностей", size: 16);
+            plot.XLabel("Номер поколения", size: 14);
+            plot.YLabel("Количество живых клеток", size: 14);
+
+            plot.Legend.IsVisible = true;
+            plot.Legend.Alignment = Alignment.UpperRight;
+            plot.Axes.AutoScale();
+
+            plot.SavePng(plotFile, 1000, 600);
+        }
+
+        private static void GeneratePopulationPlot(string dataFile, string plotFile)
+        {
+            var plotData = File.ReadAllLines(dataFile)
+                .Skip(1)
+                .Select(line => line.Split(' '))
+                .Where(parts => parts.Length == 2)
+                .Select(parts => new {
+                    Generation = int.Parse(parts[0]),
+                    CellCount = int.Parse(parts[1])
+                }).ToList();
+
+            var plot = new Plot();
+            var scatter = plot.Add.Scatter(
+                plotData.Select(x => (double)x.Generation).ToArray(),
+                plotData.Select(x => (double)x.CellCount).ToArray());
+
+            scatter.Color = Colors.Blue;
+            scatter.LineWidth = 2;
+            scatter.MarkerSize = 0;
+
+            plot.Title("Динамика популяции клеток (плотность 0.6)", size: 16);
+            plot.XLabel("Номер поколения", size: 14);
+            plot.YLabel("Количество живых клеток", size: 14);
+
+            plot.Axes.AutoScale();
+            plot.SavePng(plotFile, 800, 500);
+        }
+
+        private static void LoadConfiguration(string configPath)
+        {
+            try
+            {
+                string jsonConfig = File.ReadAllText(configPath);
+                config = JsonSerializer.Deserialize<SimulationConfig>(jsonConfig);
+            }
+            catch
+            {
+                config = new SimulationConfig();
+            }
+        }
+
+        private static void InitializeSimulation(string initialStateFile = null)
+        {
+            currentGeneration = 1;
+            generationsToStableState = 1;
+            currentSimulation = new GameOfLife(
+                config.GridWidth,
+                config.GridHeight,
+                config.CellDimension,
+                config.InitialCellDensity);
+
+            if (!string.IsNullOrEmpty(initialStateFile) && File.Exists(initialStateFile))
+            {
+                try
+                {
+                    currentSimulation.ImportState(initialStateFile);
+                    Console.WriteLine($"Начальное состояние загружено из {initialStateFile}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка загрузки: {ex.Message}");
+                    currentSimulation.Randomize(config.InitialCellDensity);
                 }
             }
         }
-    }
-    class Program
-    {
-        static Board board;
-        static private void Reset()
+
+        private static void RunMainSimulationLoop(string stabilityDataPath = null, bool analyzeClusters = true)
         {
-            board = new Board(
-                width: 50,
-                height: 20,
-                cellSize: 1,
-                liveDensity: 0.5);
-        }
-        static void Render()
-        {
-            for (int row = 0; row < board.Rows; row++)
+            while (true)
             {
-                for (int col = 0; col < board.Columns; col++)   
+                try
                 {
-                    var cell = board.Cells[col, row];
-                    if (cell.IsAlive)
+                    if (Console.KeyAvailable)
                     {
-                        Console.Write('*');
+                        ProcessUserInput();
                     }
-                    else
+
+                    DisplayCurrentState();
+
+                    if (stabilityAnalyzer.CheckForStableState(currentSimulation))
                     {
-                        Console.Write(' ');
+                        Console.WriteLine($"\nСистема стабилизировалась на поколении: {generationsToStableState}");
+
+                        if (stabilityDataPath != null)
+                        {
+                            stabilityAnalyzer.SaveStabilityData(generationsToStableState, stabilityDataPath);
+                        }
+
+                        if (analyzeClusters)
+                        {
+                            AnalyzeClusterPatterns();
+                        }
+                        break;
                     }
+
+                    currentSimulation.NextGeneration();
+                    currentGeneration++;
+                    generationsToStableState++;
+                    Thread.Sleep(config.UpdateDelay);
                 }
-                Console.Write('\n');
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Ошибка: {ex.Message}");
+                    Console.ReadKey();
+                    break;
+                }
             }
         }
-        static void Main(string[] args)
+
+        private static void ProcessUserInput()
         {
-            Reset();
-            while(true)
+            var key = Console.ReadKey(true).Key;
+            switch (key)
             {
-                Console.Clear();
-                Render();
-                board.Advance();
-                Thread.Sleep(1000);
+                case ConsoleKey.S:
+                    currentSimulation.ExportState("board.txt");
+                    Console.WriteLine("\nСостояние сохранено");
+                    break;
+                case ConsoleKey.L:
+                    currentSimulation.ImportState("board.txt");
+                    Console.WriteLine("\nСостояние загружено");
+                    break;
+                case ConsoleKey.Escape:
+                    Environment.Exit(0);
+                    break;
             }
         }
+
+        private static void DisplayCurrentState()
+        {
+            Console.Clear();
+            for (int y = 0; y < currentSimulation.Height; y++)
+            {
+                for (int x = 0; x < currentSimulation.Width; x++)
+                {
+                    Console.Write(currentSimulation.GetCellState(x, y) ? '■' : ' ');
+                }
+                Console.WriteLine();
+            }
+            Console.WriteLine($"Поколение: {currentGeneration}");
+        }
+
+        private static void AnalyzeClusterPatterns()
+        {
+            var clusters = patternRecognizer.DetectClusters(currentSimulation);
+            Console.WriteLine($"\nНайдено кластеров: {clusters.Count}");
+
+            foreach (var cluster in clusters.OrderByDescending(c => c.Count))
+            {
+                Console.WriteLine($"{patternRecognizer.IdentifyPattern(cluster)} (размер: {cluster.Count})");
+            }
+        }
+
+        private static void AnalyzePopulationDynamics(string dataFilePath, string plotFilePath)
+        {
+            double cellDensity = 0.6;
+            int maxGenerations = 600;
+
+            File.WriteAllText(dataFilePath, "Поколение Количество_клеток\n");
+            var simulation = new GameOfLife(50, 20, 1, cellDensity);
+
+            for (int gen = 0; gen < maxGenerations && !stabilityAnalyzer.CheckForStableState(simulation); gen++)
+            {
+                File.AppendAllText(dataFilePath, $"{gen} {simulation.CountLiveCells()}\n");
+                simulation.NextGeneration();
+            }
+
+            GeneratePopulationPlot(dataFilePath, plotFilePath);
+            Console.WriteLine($"График сохранен в: {plotFilePath}");
+        }
+
+        
     }
 }
