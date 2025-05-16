@@ -40,13 +40,17 @@ namespace CellularAutomataTests
         }
 
         [TestMethod]
-        public void Cell_UpdatesState_Correctly()
-        {
-            var cell = new Cell { IsAlive = false };
-            cell.NextState = true;
-            cell.UpdateState();
-            Assert.IsTrue(cell.IsAlive);
-        }
+public void Cell_UpdatesState_Correctly()
+{
+    var cell = new Cell { IsAlive = false };
+    
+    for (int i = 0; i < 3; i++)
+        cell.AddNeighbor(new Cell { IsAlive = true });
+    
+    cell.CalculateNextState();
+    cell.UpdateState();
+    Assert.IsTrue(cell.IsAlive);
+}
     }
 
     [TestClass]
@@ -112,7 +116,16 @@ namespace CellularAutomataTests
     public class PatternRecognizerTests
     {
         private string patternsDir = Path.Combine(Directory.GetCurrentDirectory(), "TestPatterns");
-
+public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> cluster)
+{
+    if (cluster == null || !cluster.Any())
+        return new HashSet<(int, int)>();
+        
+    var minX = cluster.Min(c => c.Item1);
+    var minY = cluster.Min(c => c.Item2);
+    
+    return new HashSet<(int, int)>(cluster.Select(c => (c.Item1 - minX, c.Item2 - minY)));
+}
         [TestInitialize]
         public void Setup()
         {
