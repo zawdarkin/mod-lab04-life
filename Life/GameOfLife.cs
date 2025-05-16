@@ -12,7 +12,16 @@ namespace CellularAutomata
         public int Width { get; }
         public int Height { get; }
         public int CellSize { get; }
-
+public void ImportStateFromArray(bool[,] state)
+{
+    for (int y = 0; y < Math.Min(state.GetLength(1), Height); y++)
+    {
+        for (int x = 0; x < Math.Min(state.GetLength(0), Width); x++)
+        {
+            gameGrid[x, y].IsAlive = state[x, y];
+        }
+    }
+}
         public GameOfLife(int width, int height, int cellSize, double initialDensity = 0.1)
         {
             Width = width / cellSize;
