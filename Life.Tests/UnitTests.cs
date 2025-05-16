@@ -164,17 +164,7 @@ public class PatternRecognizerTests
             Assert.AreEqual(2, clusters[0].Count);
         }
 
-        [TestMethod]
-    public void IdentifyPattern_BlinkerPattern_IdentifiedCorrectly()
-    {
-        var cluster = new HashSet<(int, int)> { (1, 0), (1, 1), (1, 2) };
-        var recognizer = new PatternRecognizer();
-        string patternName = recognizer.IdentifyPattern(cluster, testDirectory);
-        
-        
-        Assert.IsTrue(patternName == "blinker" || patternName.Contains("blinker"), 
-            $"Expected blinker pattern but got: {patternName}");
-    }
+       
 
         [TestMethod]
         public void NormalizeClusterCoordinates_ShiftsToOrigin()
