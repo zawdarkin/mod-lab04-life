@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using CellularAutomata;
 
 namespace CellularAutomataTests
@@ -40,17 +41,17 @@ namespace CellularAutomataTests
         }
 
         [TestMethod]
-public void Cell_UpdatesState_Correctly()
-{
-    var cell = new Cell { IsAlive = false };
-    
-    for (int i = 0; i < 3; i++)
-        cell.AddNeighbor(new Cell { IsAlive = true });
-    
-    cell.CalculateNextState();
-    cell.UpdateState();
-    Assert.IsTrue(cell.IsAlive);
-}
+        public void Cell_UpdatesState_Correctly()
+        {
+            var cell = new Cell { IsAlive = false };
+            // Setup neighbors to make cell alive in next state
+            for (int i = 0; i < 3; i++)
+                cell.AddNeighbor(new Cell { IsAlive = true });
+            
+            cell.CalculateNextState();
+            cell.UpdateState();
+            Assert.IsTrue(cell.IsAlive);
+        }
     }
 
     [TestClass]
@@ -64,6 +65,15 @@ public void Cell_UpdatesState_Correctly()
             Directory.CreateDirectory(testDir);
             File.WriteAllText(Path.Combine(testDir, "empty_board.txt"), "3 3\n000\n000\n000");
             File.WriteAllText(Path.Combine(testDir, "glider_board.txt"), "5 5\n00000\n00100\n00010\n01110\n00000");
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            if (Directory.Exists(testDir))
+            {
+                Directory.Delete(testDir, true);
+            }
         }
 
         [TestMethod]
@@ -103,10 +113,11 @@ public void Cell_UpdatesState_Correctly()
         {
             var game1 = new GameOfLife(5, 5, 1);
             game1.LoadPattern(Path.Combine(testDir, "glider_board.txt"));
-            game1.ExportState(Path.Combine(testDir, "exported.txt"));
+            string exportPath = Path.Combine(testDir, "exported.txt");
+            game1.ExportState(exportPath);
 
             var game2 = new GameOfLife(5, 5, 1);
-            game2.ImportState(Path.Combine(testDir, "exported.txt"));
+            game2.ImportState(exportPath);
             
             Assert.AreEqual(game1.CountLiveCells(), game2.CountLiveCells());
         }
@@ -116,22 +127,22 @@ public void Cell_UpdatesState_Correctly()
     public class PatternRecognizerTests
     {
         private string patternsDir = Path.Combine(Directory.GetCurrentDirectory(), "TestPatterns");
-public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> cluster)
-{
-    if (cluster == null || !cluster.Any())
-        return new HashSet<(int, int)>();
-        
-    var minX = cluster.Min(c => c.Item1);
-    var minY = cluster.Min(c => c.Item2);
-    
-    return new HashSet<(int, int)>(cluster.Select(c => (c.Item1 - minX, c.Item2 - minY)));
-}
+
         [TestInitialize]
         public void Setup()
         {
             Directory.CreateDirectory(patternsDir);
             File.WriteAllText(Path.Combine(patternsDir, "blinker.txt"), "010\n010\n010");
             File.WriteAllText(Path.Combine(patternsDir, "block.txt"), "11\n11");
+        }
+
+        [TestCleanup]
+        public void Cleanup()
+        {
+            if (Directory.Exists(patternsDir))
+            {
+                Directory.Delete(patternsDir, true);
+            }
         }
 
         [TestMethod]
@@ -142,6 +153,10 @@ public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> clust
             
             var recognizer = new PatternRecognizer();
             var clusters = recognizer.DetectClusters(game);
+            
+            Assert.IsNotNull(clusters);
+            Assert.IsTrue(clusters.Any());
+            
             var pattern = recognizer.IdentifyPattern(clusters.First(), patternsDir);
             
             Assert.AreEqual("blinker", pattern);
@@ -162,8 +177,10 @@ public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> clust
         {
             var cluster = new HashSet<(int, int)> { (5, 10), (6, 10), (5, 11) };
             var recognizer = new PatternRecognizer();
-            var normalized = recognizer.NormalizeClusterCoordinates(cluster);
+            var normalized = recognizer.NormalizeCoordinates(cluster);
             
+            Assert.IsNotNull(normalized);
+            Assert.AreEqual(3, normalized.Count);
             Assert.IsTrue(normalized.Contains((0, 0)));
             Assert.IsTrue(normalized.Contains((1, 0)));
             Assert.IsTrue(normalized.Contains((0, 1)));
@@ -179,8 +196,11 @@ public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> clust
             var game = new GameOfLife(3, 3, 1);
             var analyzer = new StabilityAnalyzer();
             
+            // Simulate stable state (no changes)
             for (int i = 0; i < 5; i++)
+            {
                 analyzer.CheckForStableState(game);
+            }
             
             Assert.IsTrue(analyzer.CheckForStableState(game));
         }
@@ -212,7 +232,12 @@ public HashSet<(int, int)> NormalizeClusterCoordinates(HashSet<(int, int)> clust
             string json = JsonSerializer.Serialize(config);
             var deserialized = JsonSerializer.Deserialize<SimulationConfig>(json);
             
+            Assert.IsNotNull(deserialized);
             Assert.AreEqual(config.GridWidth, deserialized.GridWidth);
+            Assert.AreEqual(config.GridHeight, deserialized.GridHeight);
+            Assert.AreEqual(config.CellDimension, deserialized.CellDimension);
+            Assert.AreEqual(config.InitialCellDensity, deserialized.InitialCellDensity);
+            Assert.AreEqual(config.UpdateDelay, deserialized.UpdateDelay);
         }
     }
 }
